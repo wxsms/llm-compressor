@@ -65,7 +65,9 @@ class MagnitudePruningModifier(Modifier, LayerParamMasking):
             self.mask_structure
         )
 
-        self.parameterized_layers_ = get_layers_params(state.model)
+        self.parameterized_layers_ = get_layers_params(
+            targets=self.targets, module=state.model
+        )
 
         for layer_param_name, parameterized_layer in self.parameterized_layers_.items():
             self.add_mask(

@@ -58,7 +58,11 @@ def infer_quantization_format(
                         # marlin24 kernel only applicable for channel/group quantization
                         return CompressionFormat.pack_quantized
                 return CompressionFormat.marlin_24
-            return CompressionFormat.pack_quantized
+            return (
+                CompressionFormat.naive_quantized
+                if sparsity_config
+                else CompressionFormat.pack_quantized
+            )
         else:  # w8a8 float and int
             if len(weight_args) == 1:
                 if (

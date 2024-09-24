@@ -95,10 +95,10 @@ class SparsityConfigMetadata:
         sparsity_structure = SparsityConfigMetadata.infer_sparsity_structure(
             model=model
         )
-        if is_model_quantized(model):
-            # compressing a sparse quantized model is not supported yet
-            format = CompressionFormat.dense.value
-        elif compress:
+        # if is_model_quantized(model):
+        #     # compressing a sparse quantized model is not supported yet
+        #     format = CompressionFormat.dense.value
+        if compress:
             format = CompressionFormat.sparse_bitmask.value
         else:
             format = CompressionFormat.dense.value

@@ -65,7 +65,9 @@ class LayerParamMasking(BaseModel):
             # add the mask buffer to the layer
             parameterized_layer.layer.register_buffer(
                 mask_name,
-                torch.ones_like(parameterized_layer.param.data, dtype=torch.bool),
+                torch.ones_like(
+                    parameterized_layer.param.weight.data, dtype=torch.bool
+                ),
                 persistent=persistent,
             )
 
