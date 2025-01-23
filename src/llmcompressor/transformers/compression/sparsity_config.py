@@ -1,7 +1,6 @@
 from typing import Dict, Optional
 
 from compressed_tensors import CompressionFormat, SparsityCompressionConfig
-from compressed_tensors.quantization.utils import is_model_quantized
 from torch import Tensor
 from torch.nn import Module
 
