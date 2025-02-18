@@ -67,10 +67,10 @@ def test_pile_eval_initializes(tiny_llama_tokenizer):
         data_args.dataset,
         data_args=data_args,
         split=None,
-        tokenizer=tiny_llama_tokenizer,
+        processor=tiny_llama_tokenizer,
     )
     assert isinstance(pile_eval_manager, TextGenerationDataset)
     assert isinstance(pile_eval_manager, PileEvalDataset)
-    assert pile_eval_manager.text_column == "text"
+    assert pile_eval_manager.data_args.text_column == "text"
     assert not pile_eval_manager.padding
     assert pile_eval_manager.max_seq_length == data_args.max_seq_length
