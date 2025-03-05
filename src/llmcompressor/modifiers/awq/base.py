@@ -5,26 +5,33 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import torch
 from compressed_tensors.utils import align_module_device, update_offload_parameter
 from loguru import logger
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, PrivateAttr
 from torch.nn import Module
 from tqdm import tqdm
-
+from llmcompressor.modifiers.quantization.quantization.base import QuantizationModifier
+from compressed_tensors.quantization.quant_scheme import PRESET_SCHEMES
 from llmcompressor.core import State
 from llmcompressor.modifiers import Modifier
+from llmcompressor.modifiers.factory import ModifierFactory
+from llmcompressor.modifiers.quantization.quantization.base import QuantizationModifier
 from llmcompressor.modifiers.utils.pytorch_helpers import run_calibration_forward
 from llmcompressor.pytorch.utils import (
     pseudo_quantize_tensor,
     tensor_forward_with_input_args,
 )
 from llmcompressor.utils.fsdp.helpers import get_fsdp_parent
-from llmcompressor.utils.helpers import calibration_forward_context
+from llmcompressor.utils.helpers import calibration_forward_context, getattr_chain
 from llmcompressor.utils.pytorch.module import (
     get_layer,
     get_layers,
     get_matching_layer,
     get_parent_by_name,
 )
+from compressed_tensors.quantization.lifecycle.forward import forward_quantize
+from compressed_tensors.quantization import QuantizationScheme
 
+from llmcompressor.utils.pytorch.module import get_no_split_params, qat_active
+from llmcompressor.modifiers.awq.utils import dynamic_quantize
 __all__ = ["AWQMapping", "AWQModifier"]
 
 
@@ -151,10 +158,14 @@ class AWQModifier(Modifier):
     symmetric: bool = False
     duo_scaling: bool = True
     apply_clip: bool = True
-
+    
+    scheme: Optional[Union[str, Dict[str, Any]]] = "AWQ"
+    
     resolved_mappings_: List[ResolvedMapping] = []
     scales_: Dict[str, torch.Tensor | List[torch.Tensor]] = {}
     module_kwargs_: Dict = {}
+
+
 
     def on_initialize(self, state: State, **kwargs) -> bool:
         """
@@ -190,6 +201,60 @@ class AWQModifier(Modifier):
             self.resolved_mappings_.clear()
 
         return True
+    
+    # def on_initialize_structure(self, state: State, **kwargs):
+    #     """
+    #     Check the model's quantization state matches that expected by this modifier,
+    #     adding a default quantization scheme if needed
+
+    #     TODO: Depreciate and fold into `on_initialize`
+
+    #     :param state: session state storing input model and calibration data
+    #     """
+    #     quantization_already_active = qat_active(state.model)
+    #     if isinstance(self._quantize, bool):
+    #         if not self._quantize and quantization_already_active:
+    #             logger.warning(
+    #                 "AWQ quantization is set to False, but a "
+    #                 "quantization modifier is already active on the model "
+    #                 "resetting _quantize to True"
+    #             )
+    #             self._quantize = True
+    #         elif self._quantize and not quantization_already_active:
+    #             logger.warning(
+    #                 "AWQ quantization is set to True without an "
+    #                 "active quantization modifier."
+    #             )
+    #             self._build_quant_modifier()
+    #         return  # use existing quantization modifier if there is one
+    #     else:
+    #         if not isinstance(self._quantize, Dict):
+    #             raise ValueError(
+    #                 "GPTQModifier._quantize accepts only a single "
+    #                 "quantization modifier or a boolean. Found "
+    #                 f"type {type(self._quantize)}"
+    #             )
+    #         if len(self._quantize) != 1:
+    #             raise ValueError(
+    #                 "GPTQModifier._quantize accepts only a single "
+    #                 "quantization modifier or a boolean. Found "
+    #                 f"{len(self._quantize)} modifiers"
+    #             )
+    #         if quantization_already_active:
+    #             logger.warning(
+    #                 "Attempting to initialize quantization for AWQ "
+    #                 "but a quantization modifier has already been applied. "
+    #                 "The quantization configuration defined under the "
+    #                 "AWQ modifier will be ignored."
+    #             )
+    #             self._quantize = True
+    #             return
+    #         self._build_quant_modifier_from_dict(self._quantize)
+    #         self._quantize = True
+
+    #     if self._quantization_modifier:
+    #         self._quantization_modifier.on_initialize_structure(state, **kwargs)
+
 
     def _get_resolved_mappings(self, model: Module) -> List[ResolvedMapping]:
         """
@@ -416,6 +481,9 @@ class AWQModifier(Modifier):
 
                 _apply_clip(model, clip_list)
 
+            for layer in balance_layers:
+                quant_scheme = QuantizationScheme.model_validate({**PRESET_SCHEMES[self.scheme], "targets": ["Linear"]})
+                dynamic_quantize(layer, layer.weight, quant_scheme, attach_q_params=True)
         # clear out allocated smoothing scales
         torch.cuda.empty_cache()
 
@@ -467,20 +535,21 @@ class AWQModifier(Modifier):
             scales[torch.isinf(scales)] = 1
             scales[torch.isnan(scales)] = 1
 
+            args_loc = "quantization_scheme.weights"
+
+
             # Q(W * s)
             for fc in linears2scale:
+                quant_scheme = QuantizationScheme.model_validate({**PRESET_SCHEMES[self.scheme], "targets": ["Linear"]})
+
                 with align_module_device(fc):
                     fc.weight.mul_(scales_view)
+                    if quant_scheme is not None:
+                        W = dynamic_quantize(fc, fc.weight, quant_scheme)
                     update_offload_parameter(
                         fc,
                         "weight",
-                        pseudo_quantize_tensor(
-                            w=fc.weight.data,
-                            symmetric=self.symmetric,
-                            bit_width=self.bits,
-                            group_size=self.group_size,
-                        )[0]
-                        / scales_view,
+                        W / scales_view,
                     )
 
             # W * X
@@ -726,8 +795,43 @@ class AWQModifier(Modifier):
             if k in module_signature and k != "use_cache":
                 sanitized_kwargs[k] = v
         return sanitized_kwargs
+    
+    # def _build_quant_modifier_from_dict(self, quant_config):
+    #     modifier_type = list(quant_config.keys())[0]
+    #     modifier_args = quant_config[modifier_type]
+    #     self._quantization_modifier = ModifierFactory.create(
+    #         modifier_type,
+    #         allow_registered=True,
+    #         allow_experimental=True,
+    #         **modifier_args,
+    #     )
+    # def _build_quant_modifier(self):
+    #     """
+    #     Build a quantization modifier based on the specified config_groups,
+    #     ignore list, and num_calibration_steps.
 
+    #     :postcondition: self._quantization_modifier is set to the built
+    #         quantization modifier
+    #     """
 
+    #     quantization_args_names = [
+    #         "config_groups",
+    #         "targets",
+    #         "scheme",
+    #         "num_calibration_steps",
+    #         "ignore",
+    #         "disable_quantization_observer_epoch",
+    #     ]
+
+    #     quant_args = {
+    #         key: getattr(self, key)
+    #         for key in quantization_args_names
+    #         if getattr(self, key, False)
+    #     }
+
+    #     logger.info(f"Building quantization modifier with args: {quant_args}")
+    #     vllm_quant_config = {"QuantizationModifier": quant_args}
+    #     self._build_quant_modifier_from_dict(vllm_quant_config)
 @torch.no_grad()
 def _apply_clip(module, clip_list: Tuple[str, torch.Tensor]):
     """
@@ -747,3 +851,13 @@ def _apply_clip(module, clip_list: Tuple[str, torch.Tensor]):
             layer.weight.data = layer.weight.data.reshape(*max_val.shape[:2], -1)
             layer.weight.data = torch.clamp(layer.weight.data, -max_val, max_val)
             layer.weight.data = layer.weight.data.reshape(org_shape)
+
+
+    def _quantize(self, module: Module, **kwargs) -> None:
+        """
+        Quantize the weights of the given module
+
+        :param module: module to quantize
+        :param kwargs: additional keyword arguments to pass to the quantization modifier
+        """
+        
