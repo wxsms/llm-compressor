@@ -1,8 +1,8 @@
-name: Test Checks (Transformers)
+name: inspect-runner
 on: [push]
 
 jobs:
-  transformers-tests:
+  inspect-runner:
     runs-on: gcp-k8s-vllm-l4-solo
     continue-on-error: true
     steps:
