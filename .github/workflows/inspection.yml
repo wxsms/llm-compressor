@@ -6,31 +6,26 @@ jobs:
     runs-on: gcp-k8s-vllm-l4-solo
 
     steps:
-      - name: update env vars
+
+      - name: check nvcc
+        run: nvcc --version
+
+      - name: check paths
         run: |
-          echo "PATH=${PATH:+$PATH:}:/usr/local/cuda-12.4/bin" | tee -a "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/local/cuda-12.4/lib64:/usr/local/nvidia/lib64" | tee -a "$GITHUB_ENV"
+          echo "PATH=$PATH"
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
         shell: bash
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
+
       - uses: actions/checkout@v4
+
       - name: "⚙️ Install dependencies"
+        id: install-deps
         run: pip3 install -U pip setuptools && pip3 install .[dev]
 
-      - name: nvcc version
-        run: nvcc --version
-
-      - name: nvidia-smi
-        if: ${{ !cancelled() }}
-        run: nvidia-smi
-
-      - name: install torch
-        if: ${{ !cancelled() }}
-        id: torch
-        run: pip3 install torch
-
       - name: check torch cuda access
-        if: ${{ !cancelled() && steps.torch.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.install-deps.outcome == 'success' }}
         run: python3 -c "import torch; print(f'{torch.cuda.is_available()=}')"
