@@ -4,7 +4,7 @@ on: [push]
 jobs:
   inspect-runner:
     runs-on: gcp-k8s-vllm-l4-solo
-    continue-on-error: true
+
     steps:
       - uses: actions/setup-python@v5
         with:
@@ -17,12 +17,14 @@ jobs:
         run: nvcc --version
 
       - name: nvidia-smi
+        if: ${{ !cancelled() }}
         run: nvidia-smi
 
       - name: install torch
+        if: ${{ !cancelled() }}
         id: torch
         run: pip3 install torch
 
       - name: check torch cuda access
-        if: ${{ steps.torch.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.torch.outcome == 'success' }}
         run: python3 -c "import torch; print(f'{torch.cuda.is_available()=}')"
