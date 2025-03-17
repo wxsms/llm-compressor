@@ -1,0 +1,28 @@
+name: Test Checks (Transformers)
+on: [push]
+
+jobs:
+  transformers-tests:
+    runs-on: gcp-k8s-vllm-l4-solo
+    continue-on-error: true
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - uses: actions/checkout@v4
+      - name: "⚙️ Install dependencies"
+        run: pip3 install -U pip setuptools && pip3 install .[dev]
+
+      - name: nvcc version
+        run: nvcc --version
+
+      - name: nvidia-smi
+        run: nvidia-smi
+
+      - name: install torch
+        id: torch
+        run: pip3 install torch
+
+      - name: check torch cuda access
+        if: ${{ steps.torch.outcome == 'success' }}
+        run: python3 -c "import torch; print(f'{torch.cuda.is_available()=}')"
