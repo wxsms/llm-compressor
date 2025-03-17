@@ -46,6 +46,11 @@ jobs:
     runs-on: gcp-k8s-vllm-l4-solo
     if: (contains(github.event.pull_request.labels.*.name, 'ready') || github.event_name == 'push') && needs.detect-changes.outputs.changes-present == 'true'
     steps:
+      - name: update env vars
+        run: |
+          echo "PATH=${PATH:+$PATH:}:/usr/local/cuda-12.4/bin" | tee -a "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/local/cuda-12.4/lib64:/usr/local/nvidia/lib64" | tee -a "$GITHUB_ENV"
+        shell: bash
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
