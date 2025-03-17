@@ -6,6 +6,14 @@ jobs:
     runs-on: gcp-k8s-vllm-l4-solo
 
     steps:
+      - name: env var info
+        run: |
+          echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
+          echo "PATH: $PATH"
+          echo "~/.bashrc:"
+          cat ~/.bashrc
+        shell: bash
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
