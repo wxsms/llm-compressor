@@ -8,7 +8,7 @@ jobs:
     steps:
       - name: update env vars
         run: |
-          echo "PATH=${PATH:+$PATH:}:/usr/local/cuda-12.4/lib64:/usr/local/nvidia/lib64" | tee -a "$GITHUB_ENV"
+          echo "PATH=${PATH:+$PATH:}:/usr/local/cuda-12.4/bin" | tee -a "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/local/cuda-12.4/lib64:/usr/local/nvidia/lib64" | tee -a "$GITHUB_ENV"
         shell: bash
 
