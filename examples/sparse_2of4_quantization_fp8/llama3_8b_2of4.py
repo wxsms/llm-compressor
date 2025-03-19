@@ -5,7 +5,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from llmcompressor import oneshot
 from llmcompressor.modifiers.obcq import SparseGPTModifier
-from llmcompressor.modifiers.pruning import ConstantPruningModifier
 from llmcompressor.modifiers.quantization import QuantizationModifier
 
 # Configuration
@@ -52,26 +51,12 @@ def get_recipe(fp8_enabled):
     save_dir = MODEL_ID.split("/")[1] + "2of4-sparse"
 
     if fp8_enabled:
-        base_recipe.extend(
-            [
-                QuantizationModifier(
-                    targets=["Linear"],
-                    ignore=["lm_head"],
-                    scheme="FP8_DYNAMIC",
-                ),
-                ConstantPruningModifier(
-                    targets=[
-                        r"re:.*q_proj.weight",
-                        r"re:.*k_proj.weight",
-                        r"re:.*v_proj.weight",
-                        r"re:.*o_proj.weight",
-                        r"re:.*gate_proj.weight",
-                        r"re:.*up_proj.weight",
-                        r"re:.*down_proj.weight",
-                    ],
-                    start=0,
-                ),
-            ]
+        base_recipe.append(
+            QuantizationModifier(
+                targets=["Linear"],
+                ignore=["lm_head"],
+                scheme="FP8_DYNAMIC",
+            ),
         )
         save_dir = MODEL_ID.split("/")[1] + "2of4-W8A8-FP8-Dynamic-Per-Token"
 
